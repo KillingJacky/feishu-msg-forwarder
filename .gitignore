@@ -1,0 +1,16 @@
+.env
+.env.*
+.venv/
+__pycache__/
+*.pyc
+/data/*
+!/data/config.example.yaml
+token.json
+app.db
+*.local.json
+.DS_Store
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+docs-ai/

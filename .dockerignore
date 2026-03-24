@@ -1,0 +1,12 @@
+.git
+.venv
+__pycache__
+*.pyc
+_ref_feishu_cli
+_scratch
+docs-ai
+data/*.db
+data/token.json
+data/config.yaml
+.env
+.env.*

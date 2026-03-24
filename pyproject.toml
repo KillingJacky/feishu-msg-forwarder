@@ -1,0 +1,24 @@
+[project]
+name = "feishu-msg-forwarder"
+version = "0.1.0"
+description = "Feishu message forwarder using user token"
+readme = "docs-ai/requirements.md"
+requires-python = ">=3.11"
+dependencies = [
+  "httpx>=0.27.0",
+  "PyYAML>=6.0.1",
+  "typer>=0.12.3",
+]
+
+[project.scripts]
+feishu-msg-forwarder = "feishu_msg_forwarder.cli.main:app"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

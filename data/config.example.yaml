@@ -1,0 +1,49 @@
+system:
+  # 飞书开放平台应用的 app_id
+  app_id: ""
+  # 飞书开放平台应用的 app_secret
+  app_secret: ""
+  # 飞书开放平台 API 地址，一般无需修改
+  base_url: "https://open.feishu.cn"
+  # OAuth 回调地址，需要与飞书开放平台后台配置保持一致
+  redirect_uri: "http://127.0.0.1:9768/callback"
+  # 本地 token 文件路径
+  token_file: "data/token.json"
+  # SQLite 数据库路径
+  db_path: "data/app.db"
+  # 轮询间隔，单位秒
+  poll_interval_seconds: 15
+  # 日志级别：DEBUG / INFO / WARNING / ERROR
+  log_level: "INFO"
+
+sources:
+  # 源群列表，系统会持续从这些群里读取新消息
+  - chat_id: "oc_xxx"
+    name: "源群A"
+
+rules:
+  # 规则列表，一条消息可以命中多条规则
+  - rule_id: "rule_1"
+    enabled: true
+    # 规则生效的源群范围
+    source_chat_ids: ["oc_xxx"]
+    # 指定发送者 ID 列表；为空表示不过滤发送者；机器人sender_id为它的app_id，格式为cli_xxxx
+    sender_ids: []
+    # true 表示仅匹配机器人消息；false 表示用户和机器人消息都可匹配
+    robot_only: false
+    # 限制匹配的消息类型；为空表示不过滤类型
+    message_types: ["text", "post"]
+    # 关键词包含匹配，要求消息文本中包含这些关键词
+    keywords: ["告警"]
+    # 正则匹配，要求消息文本满足这些正则
+    regexes: []
+    # 命中后转发到的目标群列表
+    target_chat_ids: ["oc_target_1"]
+    # 转发模式：
+    # preserve = 优先保留原消息类型，必要时降级为文本
+    # text = 一律转成文本发送
+    forward_mode: "preserve"
+    # 是否在转发内容中附加来源群、发送者、消息类型等说明
+    # false 时，preserve 模式会优先走飞书原生“转发消息”接口
+    # true 时，会改用自定义发送链路，以便把来源信息拼接进内容里
+    append_source_info: true
