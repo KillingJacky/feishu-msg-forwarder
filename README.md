@@ -29,8 +29,6 @@
 
 **`docker-compose.yml` 示例模板：**
 ```yaml
-version: '3.8'
-
 services:
   forwarder:
     image: killingjacky/feishu-msg-forwarder:latest
