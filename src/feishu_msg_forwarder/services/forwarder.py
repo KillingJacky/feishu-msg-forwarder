@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from ..auth.token_resolver import TokenManager
 from ..db.repositories import Repository
 from ..exceptions import ApiError
 from ..feishu.media_api import MediaApi
@@ -17,15 +18,20 @@ logger = logging.getLogger(__name__)
 
 
 class Forwarder:
-    def __init__(self, repo: Repository, message_api: MessageApi, media_api: MediaApi, user_access_token: str, tenant_access_token: str) -> None:
+    def __init__(self, repo: Repository, message_api: MessageApi, media_api: MediaApi, token_manager: TokenManager) -> None:
         self.repo = repo
         self.message_api = message_api
         self.media_api = media_api
-        self.user_access_token = user_access_token
-        self.tenant_access_token = tenant_access_token
+        self.token_manager = token_manager
 
     def process_pending(self) -> None:
         rows = self.repo.fetch_pending_deliveries()
+        if not rows:
+            return
+            
+        user_access_token = self.token_manager.get_user_access_token()
+        tenant_access_token = self.token_manager.get_tenant_access_token()
+
         for row in rows:
             self.repo.mark_delivery_attempt(row["id"])
             try:
@@ -45,6 +51,8 @@ class Forwarder:
                 )
                 append_source_info = bool(row["append_source_info"])
                 resp = self._send_with_fallback(
+                    user_access_token=user_access_token,
+                    tenant_access_token=tenant_access_token,
                     message=message,
                     target_chat_id=row["target_chat_id"],
                     forward_mode=row["forward_mode"],
@@ -65,41 +73,40 @@ class Forwarder:
     def _send_with_fallback(
         self,
         *,
+        user_access_token: str,
+        tenant_access_token: str,
         message: NormalizedMessage,
         target_chat_id: str,
         forward_mode: str,
         append_source_info: bool,
     ) -> dict:
-        # 飞书原生“转发消息”接口限制：仅支持 tenant_access_token。
-        # 如果调用该接口，消息发送者会强制变成机器人（Bot），这违背了我们“以用户身份转发”的需求。
-        # 因此，这里彻底弃用原生转发接口，统一使用 user_access_token 重新构建和发送消息。
         outbound = to_outbound_message(message, forward_mode, append_source_info=append_source_info)
         try:
-            return self._send_outbound(target_chat_id, outbound)
+            return self._send_outbound(user_access_token, target_chat_id, outbound)
         except ApiError as first_error:
             logger.info("自定义发送失败 source_message_id=%s target_chat_id=%s error=%s", message.message_id, target_chat_id, first_error)
             if forward_mode == "preserve":
-                reuploaded = self._try_media_reupload(message)
+                reuploaded = self._try_media_reupload(user_access_token, tenant_access_token, message)
                 if reuploaded is not None:
                     try:
                         logger.info("原素材复用失败，改为重新上传后发送 source_message_id=%s target_chat_id=%s", message.message_id, target_chat_id)
-                        return self._send_outbound(target_chat_id, reuploaded)
+                        return self._send_outbound(user_access_token, target_chat_id, reuploaded)
                     except ApiError:
                         pass
                 fallback = to_outbound_message(message, "text", append_source_info=append_source_info)
                 logger.info("自定义发送失败，降级文本发送 source_message_id=%s target_chat_id=%s", message.message_id, target_chat_id)
-                return self._send_outbound(target_chat_id, fallback)
+                return self._send_outbound(user_access_token, target_chat_id, fallback)
             raise first_error
 
-    def _send_outbound(self, target_chat_id: str, outbound: OutboundMessage) -> dict:
+    def _send_outbound(self, user_access_token: str, target_chat_id: str, outbound: OutboundMessage) -> dict:
         return self.message_api.send_message(
-            self.user_access_token,
+            user_access_token,
             receive_id=target_chat_id,
             msg_type=outbound.msg_type,
             content=outbound.content,
         )
 
-    def _try_media_reupload(self, message: NormalizedMessage) -> OutboundMessage | None:
+    def _try_media_reupload(self, user_access_token: str, tenant_access_token: str, message: NormalizedMessage) -> OutboundMessage | None:
         if message.raw_content is None:
             return None
 
@@ -110,16 +117,16 @@ class Forwarder:
 
             # 优先用本地已有的资源
             if local_path:
-                new_key = self.media_api.upload_image_from_path(self.tenant_access_token, local_path)
+                new_key = self.media_api.upload_image_from_path(tenant_access_token, local_path, is_tenant_token=True)
             elif image_bytes_b64:
-                new_key = self.media_api.upload_image_from_base64(self.tenant_access_token, image_bytes_b64)
+                new_key = self.media_api.upload_image_from_base64(tenant_access_token, image_bytes_b64, is_tenant_token=True)
             elif image_key:
                 # 从飞书下载原图再重新上传（下载用 user token，上传用 tenant token）
                 logger.info("下载原图并重新上传 message_id=%s image_key=%s", message.message_id, image_key)
-                image_bytes = self.media_api.download_image(self.user_access_token, message.message_id, image_key)
+                image_bytes = self.media_api.download_image(user_access_token, message.message_id, image_key)
                 tmp_path = _write_temp_file(image_bytes, ".png")
                 try:
-                    new_key = self.media_api.upload_image_from_path(self.tenant_access_token, tmp_path)
+                    new_key = self.media_api.upload_image_from_path(tenant_access_token, tmp_path, is_tenant_token=True)
                 finally:
                     Path(tmp_path).unlink(missing_ok=True)
             else:
@@ -133,17 +140,17 @@ class Forwarder:
             file_bytes_b64 = message.raw_content.get("file_bytes_b64")
 
             if local_path:
-                new_key = self.media_api.upload_file_from_path(self.tenant_access_token, local_path, file_name=file_name)
+                new_key = self.media_api.upload_file_from_path(tenant_access_token, local_path, file_name=file_name, is_tenant_token=True)
             elif file_bytes_b64:
-                new_key = self.media_api.upload_file_from_base64(self.tenant_access_token, file_bytes_b64, file_name=file_name)
+                new_key = self.media_api.upload_file_from_base64(tenant_access_token, file_bytes_b64, file_name=file_name, is_tenant_token=True)
             elif file_key:
                 # 从飞书下载原文件再重新上传（下载用 user token，上传用 tenant token）
                 logger.info("下载原文件并重新上传 message_id=%s file_key=%s", message.message_id, file_key)
-                file_bytes = self.media_api.download_file(self.user_access_token, message.message_id, file_key)
+                file_bytes = self.media_api.download_file(user_access_token, message.message_id, file_key)
                 suffix = Path(file_name).suffix or ".bin"
                 tmp_path = _write_temp_file(file_bytes, suffix)
                 try:
-                    new_key = self.media_api.upload_file_from_path(self.tenant_access_token, tmp_path, file_name=file_name)
+                    new_key = self.media_api.upload_file_from_path(tenant_access_token, tmp_path, file_name=file_name, is_tenant_token=True)
                 finally:
                     Path(tmp_path).unlink(missing_ok=True)
             else:
@@ -166,10 +173,10 @@ class Forwarder:
                         old_key = node["image_key"]
                         logger.info("富文本内嵌图片：下载并重新上传 message_id=%s image_key=%s", message.message_id, old_key)
                         try:
-                            image_bytes = self.media_api.download_image(self.user_access_token, message.message_id, old_key)
+                            image_bytes = self.media_api.download_image(user_access_token, message.message_id, old_key)
                             tmp_path = _write_temp_file(image_bytes, ".png")
                             try:
-                                new_key = self.media_api.upload_image_from_path(self.tenant_access_token, tmp_path)
+                                new_key = self.media_api.upload_image_from_path(tenant_access_token, tmp_path, is_tenant_token=True)
                                 node["image_key"] = new_key
                                 modified = True
                             finally:
