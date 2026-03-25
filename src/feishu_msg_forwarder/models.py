@@ -54,6 +54,7 @@ class AppConfig:
     log_level: str
     sources: list[SourceConfig]
     rules: list[RuleConfig]
+    token_refresh_interval_seconds: int = 3600
 
 
 @dataclass(slots=True)

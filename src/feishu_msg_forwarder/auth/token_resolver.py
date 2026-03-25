@@ -17,6 +17,7 @@ class TokenManager:
         self.config = config
         self._tenant_token: str | None = None
         self._tenant_expires_at: datetime | None = None
+        self._last_user_token_refresh: datetime | None = None
 
     def get_user_access_token(self, explicit_token: str | None = None, force_refresh: bool = False) -> str:
         if explicit_token:
@@ -29,20 +30,44 @@ class TokenManager:
         if token is None:
             raise AuthError("未找到本地 token，请先执行 auth login")
         
-        # 如果不是强制刷新，且 token 依然有效，直接返回
-        if not force_refresh and access_token_valid(token):
+        now = datetime.now(UTC)
+        
+        # 1. 检查是否需要根据时间间隔强制刷新
+        should_refresh_by_interval = False
+        if self._last_user_token_refresh:
+            elapsed = (now - self._last_user_token_refresh).total_seconds()
+            if elapsed >= self.config.token_refresh_interval_seconds:
+                logger.info("距离上次刷新已过去 %.1f 秒 (配置间隔: %d 秒)，触发主动刷新", elapsed, self.config.token_refresh_interval_seconds)
+                should_refresh_by_interval = True
+        
+        # 2. 检查是否即将过期
+        is_valid = access_token_valid(token)
+        
+        # 如果不是强制刷新，且 token 有效，且未到时间间隔，则返回缓存
+        if not force_refresh and is_valid and not should_refresh_by_interval:
             return token.access_token
 
+        # 触发刷新逻辑
         if refresh_token_valid(token):
-            logger.info("access token 已过期或触发强制刷新，正在自动更新")
-            refreshed = refresh_access_token(
-                self.config.base_url,
-                self.config.app_id,
-                self.config.app_secret,
-                token.refresh_token,
-            )
-            save_token(self.config.token_file, refreshed)
-            return refreshed.access_token
+            reason = "强制刷新" if force_refresh else ("Token 过期" if not is_valid else "达到刷新间隔")
+            logger.info("正在刷新 user access token (原因: %s, 过期时间: %s)", reason, token.expires_at)
+            try:
+                refreshed = refresh_access_token(
+                    self.config.base_url,
+                    self.config.app_id,
+                    self.config.app_secret,
+                    token.refresh_token,
+                )
+                save_token(self.config.token_file, refreshed)
+                self._last_user_token_refresh = now
+                logger.info("User access token 刷新成功，新过期时间: %s", refreshed.expires_at)
+                return refreshed.access_token
+            except Exception as e:
+                logger.error("刷新 user access token 失败: %s", e)
+                if is_valid:
+                    logger.warning("虽然刷新失败，但当前 token 尚未过期，尝试继续使用")
+                    return token.access_token
+                raise
         raise AuthError("refresh token 已失效，请重新授权登录")
 
     def get_tenant_access_token(self) -> str:

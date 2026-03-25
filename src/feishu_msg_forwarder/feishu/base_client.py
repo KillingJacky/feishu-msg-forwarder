@@ -55,17 +55,19 @@ class BaseFeishuClient:
                 
                 # 处理 Token 过期错误 (99991677)
                 code = data_resp.get("code", 0)
-                if code == 99991677 and self.token_manager and attempt < retry:
-                    if current_user_token:
-                        logger.warning("User access token 过期，正在强制刷新并重试 (attempt %d)", attempt + 1)
-                        current_user_token = self.token_manager.get_user_access_token(force_refresh=True)
-                        continue
-                    elif current_tenant_token:
-                        # 对于 tenant token，我们可以简单地清除缓存
-                        logger.warning("Tenant access token 可能已过期，正在重试 (attempt %d)", attempt + 1)
-                        self.token_manager._tenant_token = None
-                        current_tenant_token = self.token_manager.get_tenant_access_token()
-                        continue
+                if code == 99991677:
+                    if self.token_manager and attempt < retry:
+                        if current_user_token:
+                            logger.warning("飞书返回 Token 过期 (99991677)，正在强制刷新并重试 (attempt %d/%d)", attempt + 1, retry)
+                            current_user_token = self.token_manager.get_user_access_token(force_refresh=True)
+                            continue
+                        elif current_tenant_token:
+                            logger.warning("飞书返回 Tenant Token 过期 (99991677)，正在重置并重试 (attempt %d/%d)", attempt + 1, retry)
+                            self.token_manager._tenant_token = None
+                            current_tenant_token = self.token_manager.get_tenant_access_token()
+                            continue
+                    else:
+                        logger.error("Token 过期且已达到最大重试次数或未配置 token_manager")
 
                 if resp.status_code >= 500:
                     raise RetryableApiError(f"HTTP {resp.status_code}: {data_resp}")

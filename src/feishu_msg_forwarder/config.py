@@ -35,6 +35,7 @@ def load_config(config_file: str | None = None) -> AppConfig:
     db_path = os.getenv("FEISHU_DB_PATH", system.get("db_path", str(data_dir / "app.db")))
     poll_interval = int(os.getenv("FEISHU_POLL_INTERVAL_SECONDS", system.get("poll_interval_seconds", 15)))
     log_level = os.getenv("FEISHU_LOG_LEVEL", system.get("log_level", "INFO"))
+    token_refresh_interval = int(os.getenv("FEISHU_TOKEN_REFRESH_INTERVAL_SECONDS", system.get("token_refresh_interval_seconds", 3600)))
 
     sources = [SourceConfig(chat_id=item["chat_id"], name=item.get("name")) for item in sources_data]
     if not sources:
@@ -78,4 +79,5 @@ def load_config(config_file: str | None = None) -> AppConfig:
         log_level=log_level,
         sources=sources,
         rules=rules,
+        token_refresh_interval_seconds=token_refresh_interval,
     )

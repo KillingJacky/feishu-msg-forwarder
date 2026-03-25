@@ -27,11 +27,12 @@ class Poller:
             time.sleep(self.config.poll_interval_seconds)
 
     def run_once(self) -> None:
-        user_access_token = self.token_manager.get_user_access_token()
         for source in self.config.sources:
             initial_baseline = int(datetime.now(UTC).timestamp() * 1000)
             cursor_ms, cursor_ids = self.repo.get_source_cursor(source.chat_id, initial_baseline)
-            items = self._fetch_messages(user_access_token, source.chat_id, cursor_ms)
+            # 每次 source 循环开始前重新获取最新 token
+            token = self.token_manager.get_user_access_token()
+            items = self._fetch_messages(token, source.chat_id, cursor_ms)
             filtered_items, next_cursor_ms, next_cursor_ids = self._filter_by_cursor(source.chat_id, items, cursor_ms, cursor_ids)
             self.ingestor.ingest_items(source.chat_id, filtered_items)
             self.repo.update_source_cursor(source.chat_id, next_cursor_ms, next_cursor_ids)

@@ -29,10 +29,11 @@ class Forwarder:
         if not rows:
             return
             
-        user_access_token = self.token_manager.get_user_access_token()
-        tenant_access_token = self.token_manager.get_tenant_access_token()
-
         for row in rows:
+            # 针对每一条转发任务都获取最新的 token
+            user_access_token = self.token_manager.get_user_access_token()
+            tenant_access_token = self.token_manager.get_tenant_access_token()
+
             self.repo.mark_delivery_attempt(row["id"])
             try:
                 raw_content = json.loads(row["raw_content_json"]) if row["raw_content_json"] else None
