@@ -13,6 +13,9 @@ system:
   db_path: "data/app.db"
   # 轮询间隔，单位秒
   poll_interval_seconds: 15
+  # Token 主动刷新间隔，单位秒，默认 3600 (1小时)。
+  # 即使 Token 没过期，达到此间隔也会触发一次刷新，确保 Token 始终处于活跃状态。
+  token_refresh_interval_seconds: 3600
   # 日志级别：DEBUG / INFO / WARNING / ERROR
   log_level: "INFO"
 
