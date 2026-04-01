@@ -1,6 +1,7 @@
 services:
   forwarder:
     image: killingjacky/feishu-msg-forwarder:latest
+    build: .
     container_name: feishu-msg-forwarder
     restart: unless-stopped
     volumes:
