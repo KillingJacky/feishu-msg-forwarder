@@ -17,7 +17,7 @@ class TokenManager:
         self.config = config
         self._tenant_token: str | None = None
         self._tenant_expires_at: datetime | None = None
-        self._last_user_token_refresh: datetime | None = None
+        self._last_user_token_refresh: datetime = datetime.now(UTC)
 
     def get_user_access_token(self, explicit_token: str | None = None, force_refresh: bool = False) -> str:
         if explicit_token:

@@ -26,6 +26,8 @@ DEFAULT_SCOPES = [
     "im:message.group_msg:get_as_user",
     "im:chat:read",
     "search:message",
+    "im:message",
+    "im:message:send_as_bot",
 ]
 
 
